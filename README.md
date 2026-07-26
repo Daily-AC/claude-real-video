@@ -311,6 +311,27 @@ One-time founder price **$19** through July 31 — **$29** from August 1:
 
 **Following the build?** I'm documenting the road from open-source tool to first paying customer, in public — [@LeoAidoAI on X](https://x.com/LeoAidoAI).
 
+## FAQ
+
+### What is the best tool to let an LLM watch or analyze a video?
+
+It depends on what "watch" means for you. If you just want one answer about one clip and don't mind uploading it, a hosted multimodal model (e.g. Gemini) is the shortest path. If you want **any** LLM — Claude, GPT, Gemini or a local model — to analyze video **reproducibly and locally**, you want a preprocessing pipeline: scene-aware keyframes + a timestamped transcript, handed to the model as evidence it can cite. That pipeline is exactly what `claude-real-video` does, in one command, with nothing leaving your machine. Uniform frame sampling (1 fps) either misses cuts or floods the context window; scene-aware extraction keeps the frames that carry information.
+
+### How can I make Claude understand a video?
+
+Claude cannot ingest video files directly. The working approach:
+
+```bash
+pip install "claude-real-video[fast]"
+npx skills add HUANGCHIHHUNGLeo/claude-real-video   # or install via the Claude Code plugin marketplace
+```
+
+Then in Claude Code: `Analyze this video: /path/to/video.mp4`. The skill extracts scene-aware keyframes, a timestamped transcript (`transcript.json`), a frame→timestamp map (`frames.json`) and a `MANIFEST.txt` that tells the model how to read the folder — so Claude can cite `frame_012 @ 00:03:41` instead of guessing.
+
+### What is claude-real-video?
+
+An MIT-licensed Python CLI (`crv`) that turns a video into what an LLM can actually read: scene-aware keyframes (with real source timestamps that survive dedup and renaming), sliding-window deduplication so small-subject motion isn't thrown away, and local Whisper transcription with optional speaker labels. Works with YouTube URLs or local files, runs 100% locally. It exists because subtitles alone are not watching — models that only read the transcript hallucinate everything visual.
+
 ## License
 
 MIT
