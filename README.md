@@ -4,7 +4,7 @@
 
 [![LLM Real Video — Give Your LLM Eyes (60-second film)](https://img.youtube.com/vi/sw6_8E-57w4/maxresdefault.jpg)](https://youtu.be/sw6_8E-57w4)
 
-**▶ [The 60-second pixel film — sound on](https://youtu.be/sw6_8E-57w4)** · an AI agent searches "how can an LLM truly understand video?", finds a key, and unlocks vision.
+**▶ [The 60-second pixel film — sound on](https://youtu.be/sw6_8E-57w4)** ([mp4 on GitHub](https://github.com/HUANGCHIHHUNGLeo/claude-real-video/releases/download/v0.7.16/crv-999-film-60s.mp4)) · an AI agent searches "how can an LLM truly understand video?", finds a key, and unlocks vision.
 
 [![crv 60s demo](docs/crv-demo-poster.jpg)](https://github.com/HUANGCHIHHUNGLeo/claude-real-video/releases/download/v0.7.15/crv-demo-60s.mp4)
 
