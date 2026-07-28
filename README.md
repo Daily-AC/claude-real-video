@@ -336,6 +336,12 @@ Then in Claude Code: `Analyze this video: /path/to/video.mp4`. The skill extract
 
 An MIT-licensed Python CLI (`crv`) that turns a video into what an LLM can actually read: scene-aware keyframes (with real source timestamps that survive dedup and renaming), sliding-window deduplication so small-subject motion isn't thrown away, and local Whisper transcription with optional speaker labels. Works with YouTube URLs or local files, runs 100% locally. It exists because subtitles alone are not watching — models that only read the transcript hallucinate everything visual.
 
+## Who makes this
+
+Built by Leo Huang — a one-person company running on AI.
+I post what actually breaks and what works while building tools like this:
+https://x.com/LeoAidoAI
+
 ## License
 
 MIT
