@@ -1,3 +1,12 @@
+## 0.7.17 — 2026-07-29
+
+Isolated installs (`pipx install` / `uv tool install`) could not fetch URLs at all — fixed by @IamBennyOuO (PR #11):
+
+- yt-dlp and whisper have always been dependencies, so both are installed. But those installers expose only crv's own entry points on PATH, so `shutil.which("yt-dlp")` found nothing and crv stopped with "yt-dlp not found". URL downloads were dead for anyone who installed that way.
+- crv now falls back to yt-dlp's Python API when the executable is absent, keeping the same cookie-retry order as the command-line path.
+- whisper is probed with `importlib.util.find_spec` rather than PATH — and deliberately not imported, since that pulls in torch on every silent video.
+- `--cookies-from-browser` specs are parsed with yt-dlp's own parser, so the accepted syntax stays identical to the CLI.
+
 ## 0.7.16 — 2026-07-21
 
 Batch-hardening, ported from a 2,181-video field report against crv Pro:
