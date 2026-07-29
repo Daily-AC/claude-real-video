@@ -170,3 +170,19 @@ def test_failed_download_surfaces_yt_dlp_reason(tmp_path, monkeypatch):
     assert message.startswith("Download failed")
     assert "yt-dlp said:" in message
     assert "geo-blocked" in message
+
+
+def test_ytdlp_arg_passthrough_translates_and_protects_our_options():
+    """--yt-dlp-arg must reach yt-dlp, and must not be able to redirect the
+    download away from where crv looks for it (issue #12)."""
+    from claude_real_video.core import _ytdlp_opts_from_args
+    assert _ytdlp_opts_from_args([]) == {}
+    assert _ytdlp_opts_from_args(["-S", "res:1080"])["format_sort"] == ["res:1080"]
+    # a typo must fail loudly rather than be silently ignored: downloading with
+    # crv's defaults while the user thinks their flag applied is the worse failure
+    try:
+        _ytdlp_opts_from_args(["--definitely-not-a-yt-dlp-option"])
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("a bad --yt-dlp-arg was swallowed instead of reported")

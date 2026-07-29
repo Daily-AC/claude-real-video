@@ -59,6 +59,12 @@ def main() -> None:
     ap.add_argument("--cookies-from-browser", default=None, metavar="BROWSER",
                     help="read login cookies straight from your own browser — chrome, safari, "
                          "firefox or edge. For sites that need login (your own account only)")
+    ap.add_argument("--yt-dlp-arg", dest="ytdlp_args", action="append", default=None, metavar="ARG",
+                    help="pass a raw yt-dlp option straight through; repeat for each token, e.g. "
+                         "--yt-dlp-arg=-S --yt-dlp-arg=res:1080 to skip pulling a 4K master, or "
+                         "--yt-dlp-arg=--remote-components --yt-dlp-arg=ejs:github for YouTube JS "
+                         "challenges. Use this instead of editing your machine-wide yt-dlp config, "
+                         "which would change behaviour for every other tool on the machine")
     ap.add_argument("--no-transcribe", action="store_true", help="Skip audio transcription")
     ap.add_argument("--viewer", action="store_true",
                     help="also write viewer.html — browse the video, keyframes and "
@@ -100,6 +106,7 @@ def main() -> None:
             scene=args.scene, adaptive=args.adaptive, text_anchors=args.text_anchors,
             fps_floor=args.fps_floor, max_frames=args.max_frames,
             lang=args.lang, cookies=args.cookies, cookies_from_browser=args.cookies_from_browser,
+            ytdlp_args=args.ytdlp_args,
             do_transcribe=not args.no_transcribe,
             whisper_model=args.whisper_model, dedup_threshold=args.dedup_threshold,
             dedup_window=args.dedup_window, keep_audio=args.keep_audio, report=args.report,

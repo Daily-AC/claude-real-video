@@ -46,8 +46,29 @@ def _browser_cookie_spec(value: str):
         return (value,)
 
 
+def _ytdlp_opts_from_args(args: list[str]) -> dict:
+    """Turn raw yt-dlp command-line args into Python-API options, keeping only the
+    keys the user actually changed. Diffing against parse_options([]) is what lets a
+    passthrough override one crv default without silently inheriting yt-dlp's other
+    defaults on top of ours (approach suggested by @IamBennyOuO in issue #12)."""
+    if not args:
+        return {}
+    import yt_dlp
+    try:
+        theirs = dict(yt_dlp.parse_options(list(args)).ydl_opts)
+        blank = dict(yt_dlp.parse_options([]).ydl_opts)
+    except Exception as e:
+        # Do not swallow a typo. Silently ignoring it would download with crv's
+        # defaults and leave the user wondering why their -S never applied; the
+        # executable path fails loudly for the same input, so match that.
+        raise RuntimeError(
+            f"--yt-dlp-arg was not understood by yt-dlp: {' '.join(args)}\n{e}") from e
+    return {k: v for k, v in theirs.items() if k not in blank or blank[k] != v}
+
+
 def _download_via_ytdlp_api(src: str, dest: str, cookies: str | None,
-                            cookies_from_browser: str | None) -> str:
+                            cookies_from_browser: str | None,
+                            ytdlp_args: list[str] | None = None) -> str:
     """Download with yt-dlp's Python API, for installs that have no `yt-dlp`
     executable on PATH — `pipx install` / `uv tool install` keep crv's dependencies
     importable but expose only crv's own entry points. Writes to dest and returns
@@ -68,6 +89,13 @@ def _download_via_ytdlp_api(src: str, dest: str, cookies: str | None,
 
     base = {"outtmpl": dest, "merge_output_format": "mp4", "quiet": True,
             "no_warnings": True, "noprogress": True, "logger": _CollectingLogger()}
+    # user passthrough last so it can override a crv default (e.g. -S res:1080),
+    # but never outtmpl/logger — losing those would write the file somewhere crv
+    # does not look, or dump yt-dlp's progress into crv's own output
+    extra = _ytdlp_opts_from_args(ytdlp_args or [])
+    for locked in ("outtmpl", "logger", "quiet", "noprogress"):
+        extra.pop(locked, None)
+    base.update(extra)
     # same order as the command-line path: only reach for cookies if a plain fetch fails
     attempts = [base]
     if cookies_from_browser:
@@ -169,10 +197,15 @@ def _fetch_douyin_fallback(src: str, dest: str) -> bool:
     return False
 
 
-def fetch_video(src: str, out_dir: str, cookies: str | None = None, cookies_from_browser: str | None = None) -> str:
+def fetch_video(src: str, out_dir: str, cookies: str | None = None, cookies_from_browser: str | None = None,
+                ytdlp_args: list[str] | None = None) -> str:
     """Download via yt-dlp (URL) or copy a local file. cookies is an optional
     Netscape-format cookie file for sites that require login (your own,
-    authorised use only)."""
+    authorised use only). ytdlp_args are raw yt-dlp options passed straight
+    through (--yt-dlp-arg), for things crv has no flag of its own for: YouTube JS
+    challenges whose fix changes week to week, and format selection on long
+    videos. The alternative was editing the machine-wide yt-dlp config, which
+    changes behaviour for every other tool on the box (issue #12)."""
     dest = os.path.join(out_dir, "source.mp4")
     if src.startswith(("http://", "https://")):
         # The executable is preferred: it reads the user's yt-dlp config and owns
@@ -181,6 +214,7 @@ def fetch_video(src: str, out_dir: str, cookies: str | None = None, cookies_from
         # yt-dlp is still importable there, so use its Python API instead.
         if _have("yt-dlp"):
             base = ["yt-dlp", src, "-o", dest, "--merge-output-format", "mp4", "--no-warnings", "-q"]
+            base += list(ytdlp_args or [])   # last wins, same as yt-dlp on the command line
             errors = [_run(base).stderr]
             if not os.path.exists(dest) and cookies_from_browser:
                 errors.append(_run(base + ["--cookies-from-browser", cookies_from_browser]).stderr)
@@ -190,7 +224,7 @@ def fetch_video(src: str, out_dir: str, cookies: str | None = None, cookies_from
             # while a later cookie attempt tends to fail for its own unrelated reason
             reason = "\n".join(dict.fromkeys(e.strip() for e in errors if e and e.strip()))
         else:
-            reason = _download_via_ytdlp_api(src, dest, cookies, cookies_from_browser)
+            reason = _download_via_ytdlp_api(src, dest, cookies, cookies_from_browser, ytdlp_args)
         if not os.path.exists(dest):
             # yt-dlp may have written a different extension
             hits = [h for h in sorted(glob.glob(os.path.join(out_dir, "source.*")))
@@ -1025,6 +1059,7 @@ def process(src: str, out_dir: str, *, scene: float = 0.30, fps_floor: float = 1
             max_frames: int | None = None, lang: str | None = "auto", cookies: str | None = None,
             do_transcribe: bool = True, dedup_threshold: float = 8, dedup_window: int = 4,
             keep_audio: bool = False, report: bool = False, why: str | None = None, whisper_model: str = "base", cookies_from_browser: str | None = None,
+            ytdlp_args: list[str] | None = None,
             overwrite: bool = False, speakers: bool = False,
             export: str | None = None) -> Result:
     if speakers:
@@ -1039,7 +1074,8 @@ def process(src: str, out_dir: str, *, scene: float = 0.30, fps_floor: float = 1
     # and on overwrite remove every artifact we own before running.
     _prepare_out_dir(out_dir, overwrite)
     frames_dir = os.path.join(out_dir, "frames")
-    video = fetch_video(src, out_dir, cookies=cookies, cookies_from_browser=cookies_from_browser)
+    video = fetch_video(src, out_dir, cookies=cookies, cookies_from_browser=cookies_from_browser,
+                        ytdlp_args=ytdlp_args)
     dur = _duration(video)
     if max_frames is None:
         # flat 150 starved long videos (one frame per 2.3s on a 5:38 video);

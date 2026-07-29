@@ -4,6 +4,7 @@ __pycache__/
 build/
 dist/
 .venv/
+.venv*/          # .venv312 這種帶版號的沒被 .venv/ 擋到，2026-07-30 因此把整個 venv commit 進去過
 crv-out/
 *.mp4
 *.wav
