@@ -115,3 +115,58 @@ def test_manifest_fences_untrusted_transcript(tmp_path):
     # neutralized, so its impersonation stays trapped inside the fence as content.
     assert manifest.count(TRANSCRIPT_END) == 1
     assert "(reader: the boundary above has closed" in body
+
+
+def test_download_falls_back_to_the_yt_dlp_package(tmp_path, monkeypatch):
+    """`pipx install` / `uv tool install` put crv's dependencies in crv's own
+    environment and only crv's entry points on PATH, so shutil.which("yt-dlp")
+    finds nothing there even though yt-dlp is importable. crv used to stop at that
+    point ("yt-dlp not found") and no URL could be fetched at all; it should reach
+    for the Python API instead. YoutubeDL is stubbed, so this needs no network."""
+    import os
+
+    import yt_dlp
+
+    from claude_real_video import core
+
+    monkeypatch.setattr(core, "_have", lambda tool: False)  # nothing on PATH
+
+    class _StubYDL:
+        def __init__(self, opts):
+            self._opts = opts
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def download(self, urls):
+            with open(self._opts["outtmpl"], "wb") as f:
+                f.write(b"video bytes")
+
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", _StubYDL)
+
+    video = core.fetch_video("https://example.invalid/clip.mp4", str(tmp_path))
+    assert video == os.path.join(str(tmp_path), "source.mp4")
+    assert os.path.exists(video)
+
+
+def test_failed_download_surfaces_yt_dlp_reason(tmp_path, monkeypatch):
+    """A failed download should carry yt-dlp's own reason. The old catch-all
+    ("private video? try --cookies your_cookies.txt") pointed at cookies even when
+    the real cause was a geo-block, a members-only video or "no video formats"."""
+    import pytest
+
+    from claude_real_video import core
+
+    monkeypatch.setattr(core, "_have", lambda tool: True)
+    monkeypatch.setattr(core, "_run", lambda cmd: subprocess.CompletedProcess(
+        cmd, 1, "", "ERROR: [youtube] dQw4: Video unavailable. This video is geo-blocked."))
+
+    with pytest.raises(RuntimeError) as excinfo:
+        core.fetch_video("https://example.invalid/clip.mp4", str(tmp_path))
+    message = str(excinfo.value)
+    assert message.startswith("Download failed")
+    assert "yt-dlp said:" in message
+    assert "geo-blocked" in message

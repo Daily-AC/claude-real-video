@@ -24,6 +24,67 @@ def _have(tool: str) -> bool:
     return shutil.which(tool) is not None
 
 
+def _whisper_available() -> bool:
+    """True if the openai-whisper *package* is importable. `pipx install` and
+    `uv tool install` put crv's dependencies in crv's own environment and expose
+    only crv's own entry points, so whisper is importable there while
+    shutil.which("whisper") finds nothing. find_spec rather than a real import:
+    this probe runs on every silent/subtitled video, and importing whisper pulls
+    in torch — hundreds of MB and seconds, or an exception if that torch is broken."""
+    import importlib.util
+    return importlib.util.find_spec("whisper") is not None
+
+
+def _browser_cookie_spec(value: str):
+    """Turn --cookies-from-browser's BROWSER[+KEYRING][:PROFILE][::CONTAINER]
+    string into the tuple the Python API expects, using yt-dlp's own parser so the
+    accepted syntax stays identical to the command line."""
+    import yt_dlp
+    try:
+        return dict(yt_dlp.parse_options(["--cookies-from-browser", value]).ydl_opts)["cookiesfrombrowser"]
+    except Exception:
+        return (value,)
+
+
+def _download_via_ytdlp_api(src: str, dest: str, cookies: str | None,
+                            cookies_from_browser: str | None) -> str:
+    """Download with yt-dlp's Python API, for installs that have no `yt-dlp`
+    executable on PATH — `pipx install` / `uv tool install` keep crv's dependencies
+    importable but expose only crv's own entry points. Writes to dest and returns
+    yt-dlp's error text (empty string when the download succeeded)."""
+    try:
+        import yt_dlp
+    except ImportError:
+        return "yt-dlp is not installed in crv's environment"
+    errors: list[str] = []
+
+    class _CollectingLogger:  # keep yt-dlp's own output out of crv's, as -q did
+        def debug(self, msg): pass
+        def info(self, msg): pass
+        def warning(self, msg): pass
+
+        def error(self, msg):
+            errors.append(str(msg))
+
+    base = {"outtmpl": dest, "merge_output_format": "mp4", "quiet": True,
+            "no_warnings": True, "noprogress": True, "logger": _CollectingLogger()}
+    # same order as the command-line path: only reach for cookies if a plain fetch fails
+    attempts = [base]
+    if cookies_from_browser:
+        attempts.append({**base, "cookiesfrombrowser": _browser_cookie_spec(cookies_from_browser)})
+    if cookies:
+        attempts.append({**base, "cookiefile": cookies})
+    for opts in attempts:
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([src])
+        except Exception as e:  # yt_dlp.utils.DownloadError et al.
+            errors.append(str(e))
+        if os.path.exists(dest):
+            return ""
+    return "\n".join(dict.fromkeys(e for e in errors if e))
+
+
 @dataclass
 class Result:
     out_dir: str
@@ -114,14 +175,22 @@ def fetch_video(src: str, out_dir: str, cookies: str | None = None, cookies_from
     authorised use only)."""
     dest = os.path.join(out_dir, "source.mp4")
     if src.startswith(("http://", "https://")):
-        if not _have("yt-dlp"):
-            raise RuntimeError("yt-dlp not found. Install it: pip install yt-dlp")
-        base = ["yt-dlp", src, "-o", dest, "--merge-output-format", "mp4", "--no-warnings", "-q"]
-        _run(base)
-        if not os.path.exists(dest) and cookies_from_browser:
-            _run(base + ["--cookies-from-browser", cookies_from_browser])
-        if not os.path.exists(dest) and cookies:
-            _run(base + ["--cookies", cookies])
+        # The executable is preferred: it reads the user's yt-dlp config and owns
+        # the --cookies-from-browser syntax. An isolated install (pipx / uv tool)
+        # exposes only crv's own entry points, so there is no executable to find —
+        # yt-dlp is still importable there, so use its Python API instead.
+        if _have("yt-dlp"):
+            base = ["yt-dlp", src, "-o", dest, "--merge-output-format", "mp4", "--no-warnings", "-q"]
+            errors = [_run(base).stderr]
+            if not os.path.exists(dest) and cookies_from_browser:
+                errors.append(_run(base + ["--cookies-from-browser", cookies_from_browser]).stderr)
+            if not os.path.exists(dest) and cookies:
+                errors.append(_run(base + ["--cookies", cookies]).stderr)
+            # keep every attempt's message: the first one is usually the real cause,
+            # while a later cookie attempt tends to fail for its own unrelated reason
+            reason = "\n".join(dict.fromkeys(e.strip() for e in errors if e and e.strip()))
+        else:
+            reason = _download_via_ytdlp_api(src, dest, cookies, cookies_from_browser)
         if not os.path.exists(dest):
             # yt-dlp may have written a different extension
             hits = [h for h in sorted(glob.glob(os.path.join(out_dir, "source.*")))
@@ -133,7 +202,10 @@ def fetch_video(src: str, out_dir: str, cookies: str | None = None, cookies_from
             if _fetch_douyin_fallback(src, dest):
                 return dest
         if not os.path.exists(dest):
-            raise RuntimeError("Download failed (private video? try --cookies your_cookies.txt)")
+            # Quote yt-dlp rather than guessing: 403, geo-block, "no video formats"
+            # and members-only all land here, and only one of them is about cookies.
+            raise RuntimeError("Download failed." + (f"\nyt-dlp said:\n{reason[-800:]}" if reason
+                               else " (private video? try --cookies your_cookies.txt)"))
     else:
         if not os.path.exists(src):
             raise FileNotFoundError(src)
@@ -765,11 +837,36 @@ def _transcribe_faster_whisper(wav: str, out_dir: str, lang: str | None, model: 
     return GATE_ACCEPTED, dst
 
 
+def _transcribe_whisper_package(wav: str, out_dir: str, lang: str | None, model: str) -> str | None:
+    """In-process openai-whisper, for installs where the package is importable but
+    its console script is not on PATH (pipx / uv tool). Writes the same artifacts as
+    the CLI path — transcript.txt one line per segment, plus transcript.json —
+    and returns None on failure so the caller can still try the CLI."""
+    try:
+        import whisper
+        result = whisper.load_model(model).transcribe(
+            wav, language=(None if not lang or lang == "auto" else lang))
+    except Exception as e:  # bad model name, OOM, a broken torch install, ...
+        print(f"  ! whisper failed (model={model}): {e}")
+        return None
+    segs = [{"start": round(float(s.get("start", 0)), 3),
+             "end": round(float(s.get("end", 0)), 3),
+             "text": (s.get("text") or "").strip()}
+            for s in (result.get("segments") or []) if (s.get("text") or "").strip()]
+    if segs:
+        _write_transcript_json(out_dir, segs)
+    dst = os.path.join(out_dir, "transcript.txt")
+    body = "\n".join(s["text"] for s in segs) if segs else (result.get("text") or "").strip()
+    with open(dst, "w", encoding="utf-8") as f:
+        f.write(body + "\n")
+    return dst
+
+
 def transcribe(video: str, out_dir: str, lang: str | None, model: str = "base") -> str | None:
     """Optional: extract audio + transcribe. Prefers faster-whisper when the
-    package is installed (pip install 'claude-real-video[fast]'), otherwise
-    shells out to the `whisper` CLI."""
-    if not _have("whisper") and not _have_faster_whisper():
+    package is installed (pip install 'claude-real-video[fast]'), then in-process
+    openai-whisper, and finally the `whisper` CLI."""
+    if not _have("whisper") and not _whisper_available() and not _have_faster_whisper():
         return None
     # audio.wav is a 16kHz mono *working file* for whisper only — the user-facing
     # keep_audio artifact is audio.m4a (extract_full_audio), so this one is
@@ -790,7 +887,9 @@ def transcribe(video: str, out_dir: str, lang: str | None, model: str = "base") 
             return None
         # GATE_ERROR is the only status allowed to reach the ungated CLI fallback
         if not _have("whisper"):
-            return None
+            # No console script on PATH: on an isolated install the package is
+            # still importable, so run it in-process rather than skipping speech.
+            return _transcribe_whisper_package(wav, out_dir, lang, model) if _whisper_available() else None
         # json carries per-segment timestamps (saved as transcript.json); txt stays
         # the plain fallback. "all" writes both plus srt/vtt/tsv we clean up.
         cmd = ["whisper", wav, "--model", model, "--output_format", "all", "--output_dir", out_dir]
@@ -981,7 +1080,7 @@ def process(src: str, out_dir: str, *, scene: float = 0.30, fps_floor: float = 1
         # Check for audio *before* blaming a missing whisper install — a silent
         # video would otherwise tell the user to go install whisper for nothing.
         note = "(none — this video has no subtitles and no audio track)"
-    elif not _have("whisper") and not _have_faster_whisper():
+    elif not _have("whisper") and not _whisper_available() and not _have_faster_whisper():
         note = "(none — no existing subtitles; install a transcriber: pip install 'claude-real-video[fast]' or pip install openai-whisper)"
     else:
         transcript = transcribe(video, out_dir, lang, model=whisper_model)
