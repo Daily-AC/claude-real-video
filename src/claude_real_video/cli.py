@@ -71,8 +71,10 @@ def main() -> None:
                          "transcript in one local page (double-click to open)")
     ap.add_argument("--whisper-model", default="base",
                     choices=["tiny", "base", "small", "medium", "large", "turbo"],
-                    help="Whisper model for transcription (default: base — fast; "
-                         "pick turbo for large-v3 accuracy at ~8x large's speed, "
+                    help="Whisper model for transcription (default: base — fast and "
+                         "small, so the first run isn't a 3GB wait. Want sharper? "
+                         "--whisper-model turbo: a pruned large-v3, much faster than "
+                         "large with a minor quality trade-off (one-time 1.6GB download). "
                          "medium/large also available — bigger models download more)")
     ap.add_argument("--dedup-threshold", type=float, default=8,
                     help="Percent of pixels that must change for a frame to count as new; "
