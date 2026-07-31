@@ -1,3 +1,16 @@
+## 0.7.18 — 2026-07-31
+
+- **`--yt-dlp-arg`**: pass raw options straight through to yt-dlp, repeatable. Asked for by @IamBennyOuO (issue #12) for pre-production workflows where the working answer to YouTube's JS challenges changes week to week.
+
+```bash
+crv "<url>" --yt-dlp-arg=-S --yt-dlp-arg=res:1080
+crv "<url>" --yt-dlp-arg=--remote-components --yt-dlp-arg=ejs:github
+```
+
+  Works on both paths: appended to the command line when the yt-dlp executable is used, parsed with yt-dlp's own parser when the Python API is used, so the accepted syntax is identical either way.
+
+- **Docs corrected.** `turbo` was described in three different ways across the CLI help and the README — "large-v3 accuracy" in one place, "close to large-v2 accuracy" in another. Per the model card, turbo is a pruned and finetuned large-v3: much faster than `large`, with a minor quality trade-off. The "~8x the speed" figure was removed everywhere; it had no source — no turbo benchmark exists in this repo and OpenAI publishes no multiplier.
+
 ## 0.7.17 — 2026-07-29
 
 Isolated installs (`pipx install` / `uv tool install`) could not fetch URLs at all — fixed by @IamBennyOuO (PR #11):
