@@ -1,3 +1,7 @@
+## 0.7.19 — 2026-07-31
+
+- **Fixed the broken images on the PyPI page.** The README pointed at `docs/…` with relative paths. GitHub resolves those; PyPI does not, so the demo poster, the animated demo and the contact-sheet example had all been rendering as broken-image icons on the package page — since at least 0.7.17, not just this release. They now use absolute `raw.githubusercontent.com` URLs, which render in both places.
+
 ## 0.7.18 — 2026-07-31
 
 - **`--yt-dlp-arg`**: pass raw options straight through to yt-dlp, repeatable. Asked for by @IamBennyOuO (issue #12) for pre-production workflows where the working answer to YouTube's JS challenges changes week to week.

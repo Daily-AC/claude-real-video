@@ -6,7 +6,7 @@
 
 **▶ [The 60-second pixel film — sound on](https://youtu.be/sw6_8E-57w4)** ([mp4 on GitHub](https://github.com/HUANGCHIHHUNGLeo/claude-real-video/releases/download/v0.7.16/crv-999-film-60s.mp4)) · an AI agent searches "how can an LLM truly understand video?", finds a key, and unlocks vision.
 
-[![crv 60s demo](docs/crv-demo-poster.jpg)](https://github.com/HUANGCHIHHUNGLeo/claude-real-video/releases/download/v0.7.15/crv-demo-60s.mp4)
+[![crv 60s demo](https://raw.githubusercontent.com/HUANGCHIHHUNGLeo/claude-real-video/master/docs/crv-demo-poster.jpg)](https://github.com/HUANGCHIHHUNGLeo/claude-real-video/releases/download/v0.7.15/crv-demo-60s.mp4)
 
 60-second real demo — real install, real run, real viewer.
 
@@ -28,7 +28,7 @@ Then paste a video link into your agent and ask about it. (CLI-only use? `crv "<
 
 > **Naming:** crv is the short name for claude-real-video (the PyPI package). The paid add-on, **crv Pro**, is sold on Capafy under the listing name "llm-real-video Pro".
 
-![demo](docs/demo.gif)
+![demo](https://raw.githubusercontent.com/HUANGCHIHHUNGLeo/claude-real-video/master/docs/demo.gif)
 
 > Same 58-second clip: fixed 1 fps sampling = **58 frames**. crv keeps the **26 that actually differ** — and `--grid` packs them into **3 contact sheets**. Fewer tokens, nothing missed.
 
@@ -232,7 +232,7 @@ crv "https://..." --cookies cookies.txt
 
 One contact sheet = nine consecutive keyframes, in order, filenames on each cell — the model reads a sequence, not scattered stills:
 
-![contact sheet example](docs/grid_example.jpg)
+![contact sheet example](https://raw.githubusercontent.com/HUANGCHIHHUNGLeo/claude-real-video/master/docs/grid_example.jpg)
 
 ## Use it from Python
 
