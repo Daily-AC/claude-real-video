@@ -1,3 +1,7 @@
+## 0.8.0 — 2026-08-02
+
+- **MCP server.** `pip install 'claude-real-video[mcp]'` then `crv-mcp` — the crv pipeline over the Model Context Protocol, so Claude Desktop, Claude Code, Cursor and any MCP client can ask for a video to be watched. Two tools: `watch_video` (transcript + first batch of keyframes as inline images) and `get_frames` (page through the rest). Analyses cached per source under `~/.cache/crv-mcp`; frames are resized to 768px before returning so responses stay context-friendly. Verified end-to-end on Claude Code with a real model run.
+
 ## 0.7.19 — 2026-07-31
 
 - **Fixed the broken images on the PyPI page.** The README pointed at `docs/…` with relative paths. GitHub resolves those; PyPI does not, so the demo poster, the animated demo and the contact-sheet example had all been rendering as broken-image icons on the package page — since at least 0.7.17, not just this release. They now use absolute `raw.githubusercontent.com` URLs, which render in both places.

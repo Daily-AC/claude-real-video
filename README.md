@@ -234,6 +234,38 @@ One contact sheet = nine consecutive keyframes, in order, filenames on each cell
 
 ![contact sheet example](https://raw.githubusercontent.com/HUANGCHIHHUNGLeo/claude-real-video/master/docs/grid_example.jpg)
 
+
+## MCP server (Claude Desktop / Cursor / any MCP client)
+
+crv also ships as an MCP server, so MCP clients can ask for a video to be
+watched directly — same local pipeline, zero cloud.
+
+```bash
+pip install 'claude-real-video[mcp]'
+```
+
+Claude Code:
+
+```bash
+claude mcp add crv -- crv-mcp
+```
+
+Claude Desktop — add to `claude_desktop_config.json`:
+
+```json
+{ "mcpServers": { "crv": { "command": "crv-mcp" } } }
+```
+
+Tools: `watch_video(source, max_frames, language, transcribe)` returns the
+timestamped transcript plus the first batch of keyframes as images;
+`get_frames(source, start_index, count)` pages through the rest. Analyses are
+cached under `~/.cache/crv-mcp`, so follow-up questions about the same video
+are instant.
+
+Verified end-to-end on Claude Code (the model described a test video's frames
+correctly through the tool). Claude Desktop and Cursor speak the same MCP
+stdio protocol — config above; open an issue if anything misbehaves.
+
 ## Use it from Python
 
 ```python
