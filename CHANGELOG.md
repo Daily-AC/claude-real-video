@@ -1,3 +1,7 @@
+## 0.8.1 — 2026-08-03
+
+- Registry metadata only: `mcp-name` marker in the README and a `server.json` for the official MCP Registry (registry.modelcontextprotocol.io). No code changes.
+
 ## 0.8.0 — 2026-08-02
 
 - **MCP server.** `pip install 'claude-real-video[mcp]'` then `crv-mcp` — the crv pipeline over the Model Context Protocol, so Claude Desktop, Claude Code, Cursor and any MCP client can ask for a video to be watched. Two tools: `watch_video` (transcript + first batch of keyframes as inline images) and `get_frames` (page through the rest). Analyses cached per source under `~/.cache/crv-mcp`; frames are resized to 768px before returning so responses stay context-friendly. Verified end-to-end on Claude Code with a real model run.

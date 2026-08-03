@@ -262,6 +262,8 @@ timestamped transcript plus the first batch of keyframes as images;
 cached under `~/.cache/crv-mcp`, so follow-up questions about the same video
 are instant.
 
+mcp-name: io.github.HUANGCHIHHUNGLeo/claude-real-video
+
 Verified end-to-end on Claude Code (the model described a test video's frames
 correctly through the tool). Claude Desktop and Cursor speak the same MCP
 stdio protocol — config above; open an issue if anything misbehaves.
