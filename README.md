@@ -30,6 +30,8 @@ Then paste a video link into your agent and ask about it. (CLI-only use? `crv "<
 
 ![demo](https://raw.githubusercontent.com/HUANGCHIHHUNGLeo/claude-real-video/master/docs/demo.gif)
 
+> ▶ **New: the 40-second film** — [*my AI agent learned to watch videos (and stopped working)*](https://youtu.be/xFqPtcju_xo)
+
 > Same 58-second clip: fixed 1 fps sampling = **58 frames**. crv keeps the **26 that actually differ** — and `--grid` packs them into **3 contact sheets**. Fewer tokens, nothing missed.
 
 > **This free version lets your AI *see* the video.** [crv Pro](https://leoaido.com/crv-pro/) lets it *understand* it — how it was shot (cut rhythm, camera moves) plus a timestamped timeline of what frames can't show: gestures, expressions, voice pitch shifts, emotion, sound events. One-time price $29 — [get it on Capafy](https://capafy.ai/agent/llm-real-video-pro-let-any-llm-watch-videos/5451082151) or [buy with card via Lemon Squeezy](https://leoaido.lemonsqueezy.com/checkout/buy/ff552000-adc0-49f1-8eec-5e8ada1905a1).
