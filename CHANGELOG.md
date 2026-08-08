@@ -1,3 +1,9 @@
+## 0.8.2 — 2026-08-08
+
+- Pro pointer at the end of a run now shows current pricing ($29 one-time, launch code
+  through Aug 31) instead of the expired founder price. Opt out with `CRV_NO_HINT=1`
+  as before.
+
 ## 0.8.1 — 2026-08-03
 
 - Registry metadata only: `mcp-name` marker in the README and a `server.json` for the official MCP Registry (registry.modelcontextprotocol.io). No code changes.
