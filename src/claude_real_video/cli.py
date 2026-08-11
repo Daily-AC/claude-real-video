@@ -2,6 +2,8 @@
 import argparse
 import os
 import sys
+import time
+from pathlib import Path
 
 from .core import process
 
@@ -102,6 +104,41 @@ def main() -> None:
                          "for models that can listen to audio (Gemini, GPT-4o, ...)")
     args = ap.parse_args()
 
+    # Watched this exact source before? Say so instead of silently redoing the
+    # work. Without this the only signal was the "output dir is not empty"
+    # refusal, which tells the user nothing about the analysis they already have.
+    # Every option that changes what a run produces belongs here — the cache-hit
+    # path returns before any of them are honoured, so an option missing from
+    # this dict is an option that silently stops working on a re-run (round
+    # three caught --keep-audio/--grid/--kb being swallowed exactly that way).
+    analysis_params = {
+        "scene": args.scene, "fps_floor": args.fps_floor, "max_frames": args.max_frames,
+        "adaptive": args.adaptive, "text_anchors": args.text_anchors,
+        "dedup_threshold": args.dedup_threshold, "dedup_window": args.dedup_window,
+        "whisper_model": args.whisper_model, "lang": args.lang,
+        "transcribe": not args.no_transcribe, "speakers": args.speakers,
+        "keep_audio": args.keep_audio, "report": args.report, "why": args.why,
+        "export": args.export, "grid": args.grid, "kb": args.kb, "viewer": args.viewer,
+    }
+    if not args.overwrite and not os.environ.get("CRV_NO_MEMORY"):
+        try:
+            import json as _json
+
+            from . import memory as _memory
+            prev = _memory.lookup(args.source)
+            same_params = bool(prev) and prev.get("params") == _json.dumps(
+                analysis_params, sort_keys=True, ensure_ascii=False)
+            if prev and same_params and (Path(prev["out_dir"]) / "MANIFEST.txt").exists():
+                seen = time.strftime("%Y-%m-%d %H:%M", time.localtime(prev["watched_at"]))
+                print(f"✓ Already watched on {seen} — nothing to re-process.")
+                print(f"  analysis:   {prev['out_dir']}")
+                print(f"  manifest:   {Path(prev['out_dir']) / 'MANIFEST.txt'}")
+                print('  ask it:     crv-ask "<what you remember>"   (searches every video you have watched)')
+                print("  redo it:    add --overwrite to watch it again from scratch")
+                return
+        except Exception:  # noqa: BLE001 — memory must never block a real run
+            pass
+
     try:
         r = process(
             args.source, args.out,
@@ -118,6 +155,17 @@ def main() -> None:
     except Exception as e:  # noqa: BLE001 — surface a clean message to the user
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
+
+    # Index the finished analysis so later questions can find it without
+    # re-watching. Never let a memory problem fail an otherwise good run.
+    remembered = None
+    if not os.environ.get("CRV_NO_MEMORY"):
+        try:
+            from . import memory as _memory
+            remembered = _memory.remember(r.out_dir, source=args.source, tool="crv",
+                                          params=analysis_params)
+        except Exception as e:  # noqa: BLE001
+            print(f"  note: could not index this analysis for later search ({e})", file=sys.stderr)
 
     print(f"\n✓ Done → {r.out_dir}")
     print(f"  {r.frame_count} frames  (deduped from {r.extracted_frames} extracted)  in {r.frames_dir}")
@@ -145,6 +193,9 @@ def main() -> None:
         from .core import save_to_kb
         dest = save_to_kb(args.kb, r.manifest_path, args.source)
         print(f"  knowledge base: {dest}")
+    if remembered:
+        print(f"  memory:     indexed {remembered['lines']} searchable lines "
+              f"— ask across every video you've watched with:  crv-ask \"<what you remember>\"")
     # one quiet pointer, opt out with CRV_NO_HINT=1
     if not os.environ.get("CRV_NO_HINT"):
         # use this run's real numbers, not ad copy — deduped keyframes are the

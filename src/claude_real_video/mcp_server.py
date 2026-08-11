@@ -20,6 +20,7 @@ import io
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 try:  # mcp >= 2.0
@@ -106,7 +107,8 @@ def watch_video(
     out_dir = _out_dir_for(source)
     manifest = out_dir / "MANIFEST.txt"
 
-    if manifest.exists():
+    was_cached = manifest.exists()
+    if was_cached:
         result_note = "cached analysis (already processed earlier)"
     else:
         out_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -118,6 +120,21 @@ def watch_video(
             overwrite=True,
         )
         result_note = f"duration {r.duration}s, {r.frame_count} keyframes kept"
+
+    # Index outside the cached/fresh split: a video whose indexing failed last
+    # time (or that predates the memory feature) gets backfilled on the next
+    # call instead of staying invisible to search_memory forever. remember()
+    # replaces rather than duplicates, so re-indexing a cached analysis is free.
+    if not os.environ.get("CRV_NO_MEMORY"):
+        try:
+            from . import memory as _memory
+            if not was_cached or _memory.lookup(source) is None:
+                _memory.remember(out_dir, source=source, tool="crv",
+                                 params={"language": language, "transcribe": transcribe})
+        except Exception as e:  # noqa: BLE001
+            # Swallowing this silently made the user believe the video was
+            # remembered when it was not — say so in the response instead.
+            result_note += f" | note: not indexed for search ({e})"
 
     frames = _sorted_frames(out_dir / "frames")
     transcript_path = out_dir / "transcript.txt"
@@ -167,6 +184,78 @@ def get_frames(source: str, start_index: int = 1, count: int = DEFAULT_FRAME_BAT
     ]
     parts.extend(_frame_image(p) for p in batch)
     return parts
+
+
+@mcp_app.tool()
+def search_memory(query: str, limit: int = 12, kind: str = "any") -> list:
+    """Search everything crv has ever watched — spoken words and on-screen text —
+    and get back the video, the timestamp and the matching line. Use this instead
+    of watch_video when the answer might already be on disk, or when the question
+    spans several videos ("which video mentioned pricing?").
+
+    Args:
+        query: What to look for, in any language.
+        limit: Max hits to return (1-50).
+        kind: "any", "speech" (spoken), "onscreen" (text on screen), or "note".
+    """
+    from . import memory as _memory
+
+    if not (query or "").strip():
+        return ["Give me something to look for — an empty query is not a wildcard here."]
+    limit = max(1, min(50, limit))
+    try:
+        hits = _memory.search(query, limit=limit, kind=None if kind == "any" else kind)
+    except _memory.SchemaTooNew as e:
+        return [f"Memory index unavailable: {e}"]
+    if not hits:
+        seen = _memory.stats()["videos"]
+        return [f'No match for "{query}" across {seen} watched video(s). '
+                f"Call watch_video on a new source, or try a shorter phrase."]
+    lines = [f'{len(hits)} hit(s) for "{query}":']
+    current = None
+    for h in hits:
+        if h.source != current:
+            lines.append(f"\n{h.source}   (analysis: {h.out_dir})")
+            current = h.source
+        lines.append(f"  [{h.stamp()}] {h.kind}: {h.text}")
+    return ["\n".join(lines)]
+
+
+@mcp_app.tool()
+def list_watched() -> list:
+    """List every video crv has already watched, newest first, with how long it
+    was and how many searchable lines it produced. Cheap way to check whether a
+    video needs watching again before spending time on it.
+    """
+    from . import memory as _memory
+
+    rows = _memory.videos(limit=100)
+    if not rows:
+        return ["Nothing watched yet — call watch_video on a URL or a local file."]
+    out = [f"{len(rows)} most recent video(s) in memory ({_memory.stats()['lines']} searchable lines):"]
+    for v in rows:
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(v["watched_at"]))
+        dur = f"{v['duration']:.0f}s" if v["duration"] else "unknown length"
+        out.append(f"  {when}  {dur}  {v['lines']} lines  {v['source']}")
+    return ["\n".join(out)]
+
+
+@mcp_app.tool()
+def get_transcript(source: str, max_chars: int = TRANSCRIPT_CHAR_CAP) -> list:
+    """Return the full timestamped transcript of a video already analysed, without
+    re-sending any frames. Use when you only need the words (quoting, searching a
+    long talk) and the images would waste context.
+
+    Args:
+        source: The same URL or path given to watch_video.
+        max_chars: Truncate beyond this many characters (default 20000).
+    """
+    out_dir = _out_dir_for(source)
+    path = out_dir / "transcript.txt"
+    if not path.exists():
+        return [f"No transcript for this source — call watch_video first, or the video has no speech. (looked in {out_dir})"]
+    cap = max(1000, min(200_000, int(max_chars)))   # was unbounded upward
+    return [f"transcript for: {source}\n\n" + _read_capped(path, cap)]
 
 
 def main() -> None:

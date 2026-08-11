@@ -237,10 +237,35 @@ One contact sheet = nine consecutive keyframes, in order, filenames on each cell
 ![contact sheet example](https://raw.githubusercontent.com/HUANGCHIHHUNGLeo/claude-real-video/master/docs/grid_example.jpg)
 
 
+## Memory — ask across everything you've watched
+
+Every analysis is indexed locally (transcript lines + on-screen text, with timestamps),
+so a question can span your whole library instead of one output folder:
+
+```bash
+crv-ask "pricing strategy"   # → which video, which second, the exact line
+crv-ask 定價                  # CJK works — trigram FTS with a substring fallback
+crv-ask --list               # everything you've watched, newest first
+crv-ask --stats              # where the index lives, how big it is
+crv-ask --prune 200          # keep the newest 200 videos, reclaim the space
+```
+
+Re-running the same source with the same options doesn't re-process — crv says
+"already watched" and points at the existing analysis (0.04s vs several seconds
+measured). Different options, or `--overwrite`, re-analyse as usual.
+
+Everything stays local: one SQLite file at `~/.crv/memory.db` (override with
+`CRV_MEMORY_DB`), user-only permissions, no embeddings, no network. The first time
+anything is indexed, crv prints one line saying so. Don't want it at all?
+`CRV_NO_MEMORY=1`.
+
 ## MCP server (Claude Desktop / Cursor / any MCP client)
 
 crv also ships as an MCP server, so MCP clients can ask for a video to be
-watched directly — same local pipeline, zero cloud.
+watched directly — same local pipeline, zero cloud. Five tools: `watch_video`,
+`get_frames`, `search_memory` (ask across every watched video), `list_watched`
+(check before re-watching), and `get_transcript` (words only — no frames, so a
+long talk doesn't cost image tokens).
 
 ```bash
 pip install 'claude-real-video[mcp]'
@@ -340,6 +365,7 @@ The free tool gives your AI keyframes and a transcript — enough to know **what
 - **Interactive viewer (`--viewer`)** — one self-contained web page per analysis: the video, a clickable event timeline that jumps to the second, a transcript that highlights along with playback. EN / 繁中 / 简中.
 - **Two reports, one flag (`--ai-report`)** — with your own API key: one report on how it's shot, one on what it says.
 - **Breakdown report (`--breakdown`)** — hook analysis, pacing curve, camera language, and a rubric your own LLM completes into a full teardown.
+- **Memory across your library (`crv-pro-ask`)** — search everything Pro has watched by what the camera and the voice did: `--camera zoom` (every zoom you've ever watched), `--track emotion --label angry`, `--rhythm` (cuts/min ranked). The free `crv-ask` searches words; these search measurements the free edition never takes.
 
 One-time price **$29**:
 

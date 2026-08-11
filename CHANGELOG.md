@@ -1,3 +1,33 @@
+## 0.9.0 — 2026-08-11
+
+- **Memory across videos.** crv now keeps a local index of everything it has watched
+  (transcript lines + on-screen text, timestamps included), so you can ask across your
+  whole library instead of re-processing:
+
+  ```bash
+  crv-ask "pricing strategy"     # → which video, which second, the exact line
+  crv-ask 定價                    # CJK works: trigram FTS + substring fallback
+  crv-ask --list                 # everything you've watched, newest first
+  crv-ask --prune 200            # keep the newest 200, reclaim the space
+  ```
+
+  Re-running the same source with the same options now says "already watched" and points
+  at the existing analysis in 0.04s instead of re-processing (measured against 5.5s);
+  different options or `--overwrite` re-analyse as before. Everything is local — one
+  SQLite file at `~/.crv/memory.db`, user-only permissions, no embeddings, no network.
+  First indexing prints a one-line notice; opt out entirely with `CRV_NO_MEMORY=1`.
+
+- **MCP server: 2 tools → 5.** New: `search_memory` (ask across every watched video),
+  `list_watched` (check before re-watching), `get_transcript` (words only, no frames —
+  saves context when you don't need images). `watch_video` now indexes automatically.
+
+- Hardened against review findings before release: FTS5 queries are injection-safe and
+  verified literally after tokenizer fallback, empty queries and unbounded limits are
+  rejected, the schema refuses to downgrade an index written by a newer build, migrations
+  are atomic (no `executescript` inside the write lock), foreign keys are on, the DB file
+  is chmod 600, and concurrent writers take `BEGIN IMMEDIATE` (6 simultaneous writers
+  tested clean).
+
 ## 0.8.2 — 2026-08-08
 
 - Pro pointer at the end of a run now shows current pricing ($29 one-time, launch code

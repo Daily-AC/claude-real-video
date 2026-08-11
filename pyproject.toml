@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claude-real-video"
-version = "0.8.2"
+version = "0.9.0"
 description = "Let Claude (or any LLM) actually watch a video — scene-aware, deduplicated frames + transcript, from a URL or local file."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -33,6 +33,7 @@ claude-real-video = "claude_real_video.cli:main"
 crv = "claude_real_video.cli:main"
 crv-web = "claude_real_video.serve:main"
 crv-mcp = "claude_real_video.mcp_server:main"
+crv-ask = "claude_real_video.memory:main"
 
 [project.urls]
 Homepage = "https://github.com/HUANGCHIHHUNGLeo/claude-real-video"
