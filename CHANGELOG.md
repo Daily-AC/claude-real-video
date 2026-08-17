@@ -1,3 +1,11 @@
+## 0.9.1 — 2026-08-17
+
+- **ffmpeg 9.0 compatibility** (#14). ffmpeg 9.0 removed the long-deprecated `-vsync`
+  option, so every extraction failed with "No frames could be extracted". crv now
+  probes the installed ffmpeg once and uses `-fps_mode vfr` when available (ffmpeg
+  5.1+), falling back to `-vsync vfr` on older builds. Thanks @volpatocode for the
+  precise report.
+
 ## 0.9.0 — 2026-08-11
 
 - **Memory across videos.** crv now keeps a local index of everything it has watched

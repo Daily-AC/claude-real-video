@@ -1,6 +1,7 @@
 """Core pipeline: fetch a video (URL or file), extract scene-aware + deduplicated
 frames, optionally transcribe audio, and write a manifest an LLM can read."""
 from __future__ import annotations
+import functools
 import glob
 import os
 import re
@@ -22,6 +23,15 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess:
 
 def _have(tool: str) -> bool:
     return shutil.which(tool) is not None
+
+
+@functools.lru_cache(maxsize=1)
+def _vfr_flag() -> str:
+    # ffmpeg 9.0 removed -vsync (issue #14); its replacement -fps_mode exists
+    # since 5.1. Probe the help text rather than parsing version strings —
+    # git/dev builds ("N-12345") don't carry a comparable version number.
+    r = _run(["ffmpeg", "-hide_banner", "-h", "long"])
+    return "-fps_mode" if "fps_mode" in (r.stdout + r.stderr) else "-vsync"
 
 
 def _whisper_available() -> bool:
@@ -291,7 +301,7 @@ def extract_frames(video: str, frames_dir: str, scene: float, fps_floor: float,
     # in order — that log is the only place the source PTS survives (issue #7).
     r = _run(["ffmpeg", "-i", video,
               "-vf", f"select='{sel}',showinfo,scale=640:-1",
-              "-vsync", "vfr", os.path.join(frames_dir, "raw_%05d.jpg"),
+              _vfr_flag(), "vfr", os.path.join(frames_dir, "raw_%05d.jpg"),
               "-hide_banner", "-loglevel", "info"])
     count = len(glob.glob(os.path.join(frames_dir, "raw_*.jpg")))
     times = _parse_showinfo_times(r.stderr)
@@ -362,7 +372,7 @@ def extract_frames_adaptive(video: str, frames_dir: str, fps_floor: float,
     expr = "+".join(f"eq(n,{n})" for n in picked)
     r = _run(["ffmpeg", "-i", video,
               "-vf", f"select='{expr}',showinfo,scale=640:-1",
-              "-vsync", "vfr", os.path.join(frames_dir, "raw_%05d.jpg"),
+              _vfr_flag(), "vfr", os.path.join(frames_dir, "raw_%05d.jpg"),
               "-hide_banner", "-loglevel", "info"])
     count = len(glob.glob(os.path.join(frames_dir, "raw_*.jpg")))
     times = _parse_showinfo_times(r.stderr)
