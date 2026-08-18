@@ -1,3 +1,12 @@
+## 0.9.2 — 2026-08-18
+
+- **YouTube downloads work again out of the box.** YouTube now requires solving a
+  JavaScript "n challenge" before serving video data; yt-dlp older than 2026.07 can't
+  solve it, so URL inputs failed with `HTTP Error 403: Forbidden` or "n challenge
+  solving failed". The dependency is now `yt-dlp[default,deno]>=2026.7.4`, which pulls
+  in yt-dlp's official EJS challenge solver *and* a bundled Deno runtime — no system
+  Node/Deno setup needed. Existing installs: `pip install -U claude-real-video` fixes it.
+
 ## 0.9.1 — 2026-08-17
 
 - **ffmpeg 9.0 compatibility** (#14). ffmpeg 9.0 removed the long-deprecated `-vsync`
