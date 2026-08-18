@@ -1,3 +1,15 @@
+## 0.9.3 — 2026-08-18
+
+- **A failed ffmpeg no longer reads as an empty video** (#15). `extract_frames()`
+  and `extract_frames_adaptive()` never checked ffmpeg's exit code, so a run
+  whose ffmpeg invocation failed outright looked identical to a video with
+  nothing to extract — `0 frames`, exit 0 on older versions, and a generic
+  "no frames" error on newer ones. Frame extraction now raises with ffmpeg's
+  actual stderr (`ffmpeg frame extraction failed (exit 8). ffmpeg said: …`)
+  whenever ffmpeg exits non-zero and produced nothing, the same policy the
+  whisper branch has always had. Thanks @HPoyisis for the precise report,
+  the shim reproduction, and the fix suggestion.
+
 ## 0.9.2 — 2026-08-18
 
 - **YouTube downloads work again out of the box.** YouTube now requires solving a

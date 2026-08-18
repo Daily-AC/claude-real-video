@@ -304,8 +304,19 @@ def extract_frames(video: str, frames_dir: str, scene: float, fps_floor: float,
               _vfr_flag(), "vfr", os.path.join(frames_dir, "raw_%05d.jpg"),
               "-hide_banner", "-loglevel", "info"])
     count = len(glob.glob(os.path.join(frames_dir, "raw_*.jpg")))
+    _raise_if_ffmpeg_failed(r, count)  # issue #15: don't let a failed ffmpeg read as "empty video"
     times = _parse_showinfo_times(r.stderr)
     return count, (times if len(times) == count else [])
+
+
+def _raise_if_ffmpeg_failed(r: subprocess.CompletedProcess, count: int) -> None:
+    # A non-zero ffmpeg exit that also produced nothing is a failure, not an
+    # empty video — surface ffmpeg's own words (same reasoning as the whisper
+    # branch: a silent zero cost one user a multi-hour hunt in issue #15).
+    if count == 0 and r.returncode != 0:
+        tail = "\n".join((r.stderr or "").strip().splitlines()[-6:])
+        raise RuntimeError(
+            f"ffmpeg frame extraction failed (exit {r.returncode}). ffmpeg said:\n{tail}")
 
 
 def _scene_scores(video: str) -> list[tuple[int, float]]:
@@ -375,6 +386,7 @@ def extract_frames_adaptive(video: str, frames_dir: str, fps_floor: float,
               _vfr_flag(), "vfr", os.path.join(frames_dir, "raw_%05d.jpg"),
               "-hide_banner", "-loglevel", "info"])
     count = len(glob.glob(os.path.join(frames_dir, "raw_*.jpg")))
+    _raise_if_ffmpeg_failed(r, count)  # issue #15
     times = _parse_showinfo_times(r.stderr)
     return count, (times if len(times) == count else [])
 
