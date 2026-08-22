@@ -283,8 +283,65 @@ def _fps(video: str) -> float:
         return 25.0
 
 
+
+def _hhmmss(sec: float) -> str:
+    """Seconds -> H:MM:SS for human-facing window messages."""
+    sec = int(round(sec))
+    return f"{sec // 3600}:{(sec % 3600) // 60:02d}:{sec % 60:02d}"
+
+
+def parse_timecode(v: str | float | None) -> float | None:
+    """Accept 90, "90", "1:30", "0:01:30.5" -> seconds. None passes through."""
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    t = str(v).strip()
+    if not t:
+        return None
+    try:
+        parts = [float(x) for x in t.split(":")]
+    except ValueError:
+        raise ValueError(f"bad timecode {v!r} — use 90, 1:30 or 0:01:30.5")
+    if len(parts) > 3:
+        raise ValueError(f"bad timecode {v!r} — use 90, 1:30 or 0:01:30.5")
+    sec = 0.0
+    for x in parts:
+        sec = sec * 60 + x
+    if sec < 0:
+        raise ValueError(f"bad timecode {v!r} — negative")
+    return sec
+
+
+def _shift_times(times: list[float], start: float | None) -> list[float]:
+    """Put windowed frame times back on the source clock (issue #16)."""
+    return [t + start for t in times] if start else times
+
+
+def _window_args(start: float | None, end: float | None) -> tuple[list[str], list[str]]:
+    """ffmpeg args for an analysis window, as (before -i, after -i).
+
+    -ss goes *before* -i so ffmpeg seeks instead of decoding-and-discarding, and
+    the trailing -t is a duration because with an input-side seek the output
+    clock restarts at zero. Callers must add `start` back onto every timestamp
+    they report — issue #16: a window shifts the analysis, not the clock.
+    """
+    pre: list[str] = []
+    post: list[str] = []
+    if start:
+        pre += ["-ss", f"{start:.3f}"]
+    if end is not None:
+        dur = end - (start or 0.0)
+        if dur <= 0:
+            raise ValueError(f"--to ({end}s) must be after --from ({start or 0}s)")
+        post += ["-t", f"{dur:.3f}"]
+    return pre, post
+
+
 def extract_frames(video: str, frames_dir: str, scene: float, fps_floor: float,
-                   anchors: list[int] | None = None) -> tuple[int, list[float]]:
+                   anchors: list[int] | None = None,
+                   start: float | None = None, end: float | None = None,
+                   frame_width: int = 640) -> tuple[int, list[float]]:
     """One chronological pass: every scene change OR one frame per `fps_floor`
     seconds, whichever comes first. A single select filter keeps the frames in
     time order, so dedup compares true neighbours (two passes used to interleave
@@ -299,13 +356,15 @@ def extract_frames(video: str, frames_dir: str, scene: float, fps_floor: float,
         sel += "+" + "+".join(f"eq(n,{n})" for n in anchors)
     # showinfo sits after select: its log lines are exactly the emitted frames,
     # in order — that log is the only place the source PTS survives (issue #7).
-    r = _run(["ffmpeg", "-i", video,
-              "-vf", f"select='{sel}',showinfo,scale=640:-1",
+    pre, post = _window_args(start, end)
+    r = _run(["ffmpeg", *pre, "-i", video,
+              "-vf", f"select='{sel}',showinfo,scale={frame_width}:-1",
+              *post,
               _vfr_flag(), "vfr", os.path.join(frames_dir, "raw_%05d.jpg"),
               "-hide_banner", "-loglevel", "info"])
     count = len(glob.glob(os.path.join(frames_dir, "raw_*.jpg")))
     _raise_if_ffmpeg_failed(r, count)  # issue #15: don't let a failed ffmpeg read as "empty video"
-    times = _parse_showinfo_times(r.stderr)
+    times = _shift_times(_parse_showinfo_times(r.stderr), start)
     return count, (times if len(times) == count else [])
 
 
@@ -319,15 +378,18 @@ def _raise_if_ffmpeg_failed(r: subprocess.CompletedProcess, count: int) -> None:
             f"ffmpeg frame extraction failed (exit {r.returncode}). ffmpeg said:\n{tail}")
 
 
-def _scene_scores(video: str) -> list[tuple[int, float]]:
+def _scene_scores(video: str, start: float | None = None,
+                  end: float | None = None) -> list[tuple[int, float]]:
     """One metadata pass: per-frame scene-change score from ffmpeg's scene
     detector, without extracting anything. Returns [(frame_no, score), ...]."""
     import tempfile
     with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as tf:
         meta = tf.name
     try:
-        _run(["ffmpeg", "-i", video,
+        pre, post = _window_args(start, end)
+        _run(["ffmpeg", *pre, "-i", video,
               "-vf", f"select='gte(scene,0)',metadata=print:file={meta}",
+              *post,
               "-f", "null", "-", "-hide_banner", "-loglevel", "error"])
         scores, frame_no = [], None
         for line in open(meta, encoding="utf-8", errors="ignore"):
@@ -350,7 +412,9 @@ def _scene_scores(video: str) -> list[tuple[int, float]]:
 def extract_frames_adaptive(video: str, frames_dir: str, fps_floor: float,
                             window_s: float = 2.0, mult: float = 3.0,
                             min_content: float = 0.04,
-                            anchors: list[int] | None = None) -> tuple[int, list[float]]:
+                            anchors: list[int] | None = None,
+                            start: float | None = None, end: float | None = None,
+                            frame_width: int = 640) -> tuple[int, list[float]]:
     """Adaptive extraction for slow-changing content (issue #2): a frame is a
     keyframe when its scene score exceeds `mult` x the rolling average of the
     previous `window_s` seconds AND an absolute floor `min_content` — so gradual
@@ -358,9 +422,10 @@ def extract_frames_adaptive(video: str, frames_dir: str, fps_floor: float,
     register against their own quiet neighbourhood. The fps_floor safety net
     still guarantees a frame per interval. Falls back to plain extraction when
     the score pass yields nothing (e.g. single-frame or still videos)."""
-    scores = _scene_scores(video)
+    scores = _scene_scores(video, start, end)
     if not scores:
-        return extract_frames(video, frames_dir, 0.30, fps_floor, anchors=anchors)
+        return extract_frames(video, frames_dir, 0.30, fps_floor, anchors=anchors,
+                              start=start, end=end, frame_width=frame_width)
     fps = _fps(video)
     win = max(1, round(fps * window_s))
     every_n = max(1, round(fps * fps_floor))
@@ -376,18 +441,21 @@ def extract_frames_adaptive(video: str, frames_dir: str, fps_floor: float,
         if len(rolling) > win:
             rolling.pop(0)
     if not picked:
-        return extract_frames(video, frames_dir, 0.30, fps_floor, anchors=anchors)
+        return extract_frames(video, frames_dir, 0.30, fps_floor, anchors=anchors,
+                              start=start, end=end, frame_width=frame_width)
     if anchors:
         picked = sorted(set(picked) | set(anchors))
     os.makedirs(frames_dir, exist_ok=True)
     expr = "+".join(f"eq(n,{n})" for n in picked)
-    r = _run(["ffmpeg", "-i", video,
-              "-vf", f"select='{expr}',showinfo,scale=640:-1",
+    pre, post = _window_args(start, end)
+    r = _run(["ffmpeg", *pre, "-i", video,
+              "-vf", f"select='{expr}',showinfo,scale={frame_width}:-1",
+              *post,
               _vfr_flag(), "vfr", os.path.join(frames_dir, "raw_%05d.jpg"),
               "-hide_banner", "-loglevel", "info"])
     count = len(glob.glob(os.path.join(frames_dir, "raw_*.jpg")))
     _raise_if_ffmpeg_failed(r, count)  # issue #15
-    times = _parse_showinfo_times(r.stderr)
+    times = _shift_times(_parse_showinfo_times(r.stderr), start)
     return count, (times if len(times) == count else [])
 
 
@@ -918,7 +986,42 @@ def _transcribe_whisper_package(wav: str, out_dir: str, lang: str | None, model:
     return dst
 
 
-def transcribe(video: str, out_dir: str, lang: str | None, model: str = "base") -> str | None:
+def transcribe(video: str, out_dir: str, lang: str | None, model: str = "base",
+               start: float | None = None, end: float | None = None) -> str | None:
+    """Transcribe (optionally only a window) and put cue times back on the source
+    clock, so a windowed run quotes the same timecodes as a full run (issue #16)."""
+    path = _transcribe_impl(video, out_dir, lang, model, start, end)
+    if start:
+        _shift_transcript_artifacts(out_dir, start)
+    return path
+
+
+def _shift_transcript_artifacts(out_dir: str, start: float) -> None:
+    """Add `start` back onto transcript.json cue times. Whisper saw a clip that
+    began at zero; every timestamp crv reports must be a source timecode."""
+    import json as _json
+    jp = os.path.join(out_dir, "transcript.json")
+    if not os.path.exists(jp):
+        return
+    try:
+        with open(jp, encoding="utf-8") as f:
+            data = _json.load(f)
+        segs = data.get("segments") if isinstance(data, dict) else data
+        if not isinstance(segs, list):
+            return
+        for seg in segs:
+            for k in ("start", "end"):
+                if isinstance(seg.get(k), (int, float)):
+                    seg[k] = round(seg[k] + start, 3)
+        with open(jp, "w", encoding="utf-8") as f:
+            _json.dump(data, f, ensure_ascii=False, indent=2)
+    except (OSError, ValueError):
+        # a transcript we cannot re-time is still a usable transcript
+        pass
+
+
+def _transcribe_impl(video: str, out_dir: str, lang: str | None, model: str = "base",
+                     start: float | None = None, end: float | None = None) -> str | None:
     """Optional: extract audio + transcribe. Prefers faster-whisper when the
     package is installed (pip install 'claude-real-video[fast]'), then in-process
     openai-whisper, and finally the `whisper` CLI."""
@@ -928,8 +1031,11 @@ def transcribe(video: str, out_dir: str, lang: str | None, model: str = "base") 
     # keep_audio artifact is audio.m4a (extract_full_audio), so this one is
     # always removed once transcription is done.
     wav = os.path.join(out_dir, "audio.wav")
-    _run(["ffmpeg", "-y", "-i", video, "-vn", "-ar", "16000", "-ac", "1", wav,
-          "-hide_banner", "-loglevel", "error"])
+    # issue #16: only the requested window reaches whisper — on a 47-minute call
+    # where 15 minutes matter, transcribing the rest is the bulk of the wait.
+    pre, post = _window_args(start, end)
+    _run(["ffmpeg", "-y", *pre, "-i", video, "-vn", "-ar", "16000", "-ac", "1",
+          *post, wav, "-hide_banner", "-loglevel", "error"])
     if not os.path.exists(wav):
         return None
     try:
@@ -1083,7 +1189,9 @@ def process(src: str, out_dir: str, *, scene: float = 0.30, fps_floor: float = 1
             keep_audio: bool = False, report: bool = False, why: str | None = None, whisper_model: str = "base", cookies_from_browser: str | None = None,
             ytdlp_args: list[str] | None = None,
             overwrite: bool = False, speakers: bool = False,
-            export: str | None = None) -> Result:
+            export: str | None = None,
+            start: str | float | None = None, end: str | float | None = None,
+            frame_width: int = 640) -> Result:
     if speakers:
         # fail fast — before any download/extraction work happens
         from .speakers import available as _speakers_available
@@ -1099,15 +1207,31 @@ def process(src: str, out_dir: str, *, scene: float = 0.30, fps_floor: float = 1
     video = fetch_video(src, out_dir, cookies=cookies, cookies_from_browser=cookies_from_browser,
                         ytdlp_args=ytdlp_args)
     dur = _duration(video)
+    start = parse_timecode(start)
+    end = parse_timecode(end)
+    if end is not None and dur and end > dur:
+        print(f"  ! --to {end:.1f}s is past the end of the video ({dur:.1f}s) — using the end")
+        end = None
+    if start and dur and start >= dur:
+        raise ValueError(f"--from {start:.1f}s is at or past the end of the video ({dur:.1f}s)")
+    # issue #16: the frame budget must follow the window, not the file — a
+    # 15-minute window inside a 47-minute call should get a 15-minute budget.
+    window_dur = (end if end is not None else dur) - (start or 0.0)
+    if start or end is not None:
+        print(f"  window: {_hhmmss(start or 0.0)} - "
+              f"{_hhmmss(end) if end is not None else 'end'} ({window_dur:.0f}s of {dur:.0f}s)")
     if max_frames is None:
         # flat 150 starved long videos (one frame per 2.3s on a 5:38 video);
         # scale the default with duration, explicit --max-frames still wins
-        max_frames = int(min(600, max(150, dur * 1.5)))
+        max_frames = int(min(600, max(150, window_dur * 1.5)))
     anchors = (_text_anchor_frames(_subtitle_cue_times(src, video, out_dir), _fps(video))
                if text_anchors else None)
     extracted, frame_times = (
-        extract_frames_adaptive(video, frames_dir, fps_floor, anchors=anchors)
-        if adaptive else extract_frames(video, frames_dir, scene, fps_floor, anchors=anchors))
+        extract_frames_adaptive(video, frames_dir, fps_floor, anchors=anchors,
+                                start=start, end=end, frame_width=frame_width)
+        if adaptive else
+        extract_frames(video, frames_dir, scene, fps_floor, anchors=anchors,
+                       start=start, end=end, frame_width=frame_width))
     if extracted == 0:
         raise RuntimeError(
             "No frames could be extracted — the download may be incomplete or the file "
@@ -1141,7 +1265,8 @@ def process(src: str, out_dir: str, *, scene: float = 0.30, fps_floor: float = 1
     elif not _have("whisper") and not _whisper_available() and not _have_faster_whisper():
         note = "(none — no existing subtitles; install a transcriber: pip install 'claude-real-video[fast]' or pip install openai-whisper)"
     else:
-        transcript = transcribe(video, out_dir, lang, model=whisper_model)
+        transcript = transcribe(video, out_dir, lang, model=whisper_model,
+                                start=start, end=end)
         note = (f"{transcript} (transcribed by whisper)" if transcript else
                 ("(none — the voice-activity gate heard no speech; music/ambient-only audio)"
                  if _last_run_no_speech else "(none — transcription failed)"))

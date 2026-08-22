@@ -36,6 +36,16 @@ def main() -> None:
     ap.add_argument("--max-frames", type=int, default=None,
                     help="Cap total frames (default: auto — scales with duration, "
                          "clamp(150, seconds*1.5, 600))")
+    ap.add_argument("--from", dest="start", default=None, metavar="TIMECODE",
+                    help="Analyse only from this point (90, 1:30, 0:01:30.5). Reported "
+                         "timestamps stay source timecodes, not window-relative")
+    ap.add_argument("--to", dest="end", default=None, metavar="TIMECODE",
+                    help="Stop analysing here. With --from, the frame budget and the "
+                         "transcript follow the window instead of the whole file")
+    ap.add_argument("--frame-width", type=int, default=640, metavar="PX",
+                    help="Width of extracted frames, aspect kept (default: 640). Raise it "
+                         "when the meaning is small text — terminals, spreadsheets, dense "
+                         "dashboards. Larger frames multiply output size and model cost")
     ap.add_argument("--adaptive", action="store_true",
                     help="Adaptive scene detection: catches slow morphs (2-3s squash/stretch, "
                          "gradual pans) a fixed threshold misses, by comparing each frame "
@@ -119,6 +129,7 @@ def main() -> None:
         "transcribe": not args.no_transcribe, "speakers": args.speakers,
         "keep_audio": args.keep_audio, "report": args.report, "why": args.why,
         "export": args.export, "grid": args.grid, "kb": args.kb, "viewer": args.viewer,
+        "start": args.start, "end": args.end, "frame_width": args.frame_width,
     }
     if not args.overwrite and not os.environ.get("CRV_NO_MEMORY"):
         try:
@@ -151,6 +162,7 @@ def main() -> None:
             dedup_window=args.dedup_window, keep_audio=args.keep_audio, report=args.report,
             why=args.why, overwrite=args.overwrite, speakers=args.speakers,
             export=args.export,
+            start=args.start, end=args.end, frame_width=args.frame_width,
         )
     except Exception as e:  # noqa: BLE001 — surface a clean message to the user
         print(f"error: {e}", file=sys.stderr)

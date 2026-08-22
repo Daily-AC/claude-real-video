@@ -57,6 +57,10 @@ Then drop the frames + `MANIFEST.txt` into Claude / ChatGPT / Gemini and ask awa
 
 Want to eyeball what the model will see first? Add `--viewer` — it writes a local `viewer.html` (video + keyframe grid + transcript) you can double-click open. No network, no extra installs.
 
+**Only part of a video matters** (a 10-minute screen share inside a 90-minute call): `--from 28:00 --to 43:00`. ffmpeg seeks instead of decoding the whole file, Whisper only hears the window, and the frame budget is spent inside it — but every timestamp crv reports is still a source timecode you can quote to a colleague.
+
+**The meaning is small text** (a terminal, a spreadsheet, an IDE): `--frame-width 1600`. Frame *selection* is the hard part and crv already does it; at 640px on a 1920-wide screen recording the right moment gets found and then the detail that made it worth finding is thrown away.
+
 **Slow-changing content** (animation tutorials, gradual morphs, slow pans): add `--adaptive` — frames are picked against their rolling neighbourhood instead of a fixed threshold, so a 2-3s squash-and-stretch that never spikes any single frame still gets captured.
 
 **Text-heavy content** (lecture slides, screen recordings, talking-head explainers): add `--text-anchors` — extra frames are forced at subtitle-cue timestamps, so each spoken segment gets a matching visual even when the scene barely changes. Needs a sidecar `.srt`/`.vtt` or an embedded subtitle track — captions burned into the pixels can't be detected. At most one forced frame per second; scene detection is untouched.
@@ -210,7 +214,9 @@ crv "https://..." --cookies cookies.txt
 | `--overwrite` | off | replace a previous analysis living in the output directory (without this, a non-empty output dir is refused to avoid mixing videos) |
 | `--scene` | `0.30` | scene-change sensitivity (lower = more frames) |
 | `--fps-floor` | `1.0` | at least one frame every N seconds |
-| `--max-frames` | auto: `clamp(150, duration×1.5, 600)` | hard cap on total frames (explicit value always wins) |
+| `--from` / `--to` | whole file | analyse only part of a video (`90`, `1:30`, `0:01:30.5`). Reported timestamps stay **source** timecodes — a window shifts the analysis, not the clock — and the frame budget plus the transcript follow the window instead of the whole file |
+| `--frame-width` | `640` | width of extracted frames, aspect kept. Raise it when the meaning *is* small text (terminals, spreadsheets, dense dashboards); larger frames multiply output size and model cost |
+| `--max-frames` | auto: `clamp(150, window×1.5, 600)` | hard cap on total frames (explicit value always wins) |
 | `--adaptive` | off | adaptive scene detection: catches slow morphs (2-3s squash/stretch, gradual pans) a fixed threshold misses, by comparing each frame against its rolling neighbourhood |
 | `--text-anchors` | off | force extra frames at subtitle-cue timestamps (sidecar `.srt`/`.vtt` or embedded track) — for videos where meaning changes faster than pixels; at most one forced frame per second |
 | `--speakers` | off | label every transcript line with the speaker (`[SPEAKER_00]` …) via local diarization — needs `pip install "claude-real-video[speakers]"`, 45 MB model downloads once |
