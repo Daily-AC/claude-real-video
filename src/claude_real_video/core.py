@@ -753,6 +753,29 @@ def _parse_cues(raw: str) -> list[dict]:
     return segs
 
 
+def _clip_cues(segs: list[dict], start: float | None,
+               end: float | None) -> list[dict]:
+    """Keep only the cues overlapping [start, end] — a window has to reach the
+    captions too, not just Whisper. Times stay on the source clock (same
+    contract as _shift_times and as transcribe()'s post-shift artifacts).
+    A cue straddling a boundary is kept: half a sentence beats none."""
+    if start is None and end is None:
+        return segs
+    lo = start or 0.0
+    hi = end if end is not None else float("inf")
+    return [c for c in segs if c["end"] >= lo and c["start"] <= hi]
+
+
+def _cues_to_text(segs: list[dict], out_txt: str) -> str | None:
+    """Write cue text (one line per cue) the way _subs_to_text would, but from
+    already-parsed cues — needed when a window has filtered them."""
+    text = "\n".join(c["text"] for c in segs if c["text"]).strip()
+    if not text:
+        return None
+    open(out_txt, "w", encoding="utf-8").write(text + "\n")
+    return out_txt
+
+
 def _segments_from_whisper_json(path: str) -> list[dict]:
     """Extract [{start, end, text}] from whisper's json output."""
     try:
@@ -803,21 +826,38 @@ def _subs_to_text(sub_path: str, out_txt: str) -> str | None:
     return out_txt
 
 
-def existing_subtitles(src: str, video: str, out_dir: str) -> str | None:
+def existing_subtitles(src: str, video: str, out_dir: str,
+                       start: float | None = None,
+                       end: float | None = None) -> str | None:
     """Use subtitles the video already ships with, instead of re-transcribing.
     Checks (1) a sidecar .srt/.vtt next to a local source file, then
     (2) an embedded subtitle stream. Returns the transcript path, or None.
-    This is faster and more accurate than Whisper when captions already exist."""
+    This is faster and more accurate than Whisper when captions already exist.
+    `start`/`end` clip the cues to the analysis window, so a windowed run gets
+    a windowed transcript whichever path produced it (--to's help promises the
+    transcript follows the window; only transcribe() was keeping that promise)."""
     dst = os.path.join(out_dir, "transcript.txt")
     # 1) sidecar file next to the original source (local files only)
     if not src.startswith(("http://", "https://")):
         base = os.path.splitext(src)[0]
         for ext in (".srt", ".vtt"):
             cand = base + ext
-            if os.path.exists(cand) and _subs_to_text(cand, dst):
+            if not os.path.exists(cand):
+                continue
+            try:
+                cues = _clip_cues(_parse_cues(
+                    open(cand, encoding="utf-8", errors="ignore").read()), start, end)
+            except OSError:
+                cues = []
+            # Unwindowed runs keep the line-scraping path: it handles caption
+            # shapes _parse_cues does not, and there is nothing to clip.
+            wrote = (_cues_to_text(cues, dst) if (start is not None or end is not None)
+                     else _subs_to_text(cand, dst))
+            if wrote:
+                # transcript.json is a bonus next to transcript.txt; an
+                # unwritable one must not sink a run that already has the text
                 try:
-                    _write_transcript_json(out_dir, _parse_cues(
-                        open(cand, encoding="utf-8", errors="ignore").read()))
+                    _write_transcript_json(out_dir, cues)
                 except OSError:
                     pass
                 return dst
@@ -827,11 +867,16 @@ def existing_subtitles(src: str, video: str, out_dir: str) -> str | None:
         _run(["ffmpeg", "-y", "-i", video, "-map", "0:s:0", raw,
               "-hide_banner", "-loglevel", "error"])
         if os.path.exists(raw):
-            ok = _subs_to_text(raw, dst)
+            try:
+                cues = _clip_cues(_parse_cues(
+                    open(raw, encoding="utf-8", errors="ignore").read()), start, end)
+            except OSError:
+                cues = []
+            ok = (_cues_to_text(cues, dst) if (start is not None or end is not None)
+                  else _subs_to_text(raw, dst))
             if ok:
                 try:
-                    _write_transcript_json(out_dir, _parse_cues(
-                        open(raw, encoding="utf-8", errors="ignore").read()))
+                    _write_transcript_json(out_dir, cues)
                 except OSError:
                     pass
             try:
@@ -1261,7 +1306,7 @@ def process(src: str, out_dir: str, *, scene: float = 0.30, fps_floor: float = 1
     transcript = None
     if not do_transcribe:
         note = "(skipped: --no-transcribe)"
-    elif (transcript := existing_subtitles(src, video, out_dir)):
+    elif (transcript := existing_subtitles(src, video, out_dir, start, end)):
         note = f"{transcript} (from the video's own subtitles)"
     elif not _has_audio(video):
         # Check for audio *before* blaming a missing whisper install — a silent
