@@ -321,10 +321,15 @@ def _shift_times(times: list[float], start: float | None) -> list[float]:
 def _window_args(start: float | None, end: float | None) -> tuple[list[str], list[str]]:
     """ffmpeg args for an analysis window, as (before -i, after -i).
 
-    -ss goes *before* -i so ffmpeg seeks instead of decoding-and-discarding, and
-    the trailing -t is a duration because with an input-side seek the output
-    clock restarts at zero. Callers must add `start` back onto every timestamp
-    they report — issue #16: a window shifts the analysis, not the clock.
+    Both -ss and -t go *before* -i: -ss so ffmpeg seeks instead of
+    decoding-and-discarding, and -t so it stops *reading* at the window end.
+    An output-side -t would let the whole input decode, and then showinfo logs
+    frames that never get written — the count mismatch throws every timestamp
+    away (silently: no frames.json, no MANIFEST line). -t is a duration, not an
+    end time, because an input-side seek restarts the clock at zero.
+
+    Callers must add `start` back onto every timestamp they report — issue #16:
+    a window shifts the analysis, not the clock.
     """
     pre: list[str] = []
     post: list[str] = []
@@ -334,7 +339,7 @@ def _window_args(start: float | None, end: float | None) -> tuple[list[str], lis
         dur = end - (start or 0.0)
         if dur <= 0:
             raise ValueError(f"--to ({end}s) must be after --from ({start or 0}s)")
-        post += ["-t", f"{dur:.3f}"]
+        pre += ["-t", f"{dur:.3f}"]
     return pre, post
 
 

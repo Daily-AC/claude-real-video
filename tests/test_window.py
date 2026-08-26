@@ -29,16 +29,41 @@ def test_parse_timecode_rejects_junk(bad):
 
 def test_window_args_seeks_before_input_and_uses_duration():
     # -ss must be an input option (fast seek) and the tail must be a DURATION,
-    # because an input-side seek restarts the output clock at zero.
+    # because an input-side seek restarts the output clock at zero. -t is an
+    # input option too: on the output side ffmpeg decodes the whole input, so
+    # showinfo logs frames that are never written and the count mismatch in
+    # extract_frames() discards every timestamp.
     pre, post = _window_args(90, 120)
-    assert pre == ["-ss", "90.000"]
-    assert post == ["-t", "30.000"]
+    assert pre == ["-ss", "90.000", "-t", "30.000"]
+    assert post == []
 
 
 def test_window_args_open_ended():
     assert _window_args(90, None) == (["-ss", "90.000"], [])
-    assert _window_args(None, 60) == ([], ["-t", "60.000"])
+    assert _window_args(None, 60) == (["-t", "60.000"], [])
     assert _window_args(None, None) == ([], [])
+
+
+def test_window_duration_is_an_input_option():
+    """A --to window must not put -t after -i.
+
+    Regression: with an output-side -t, ffmpeg decodes past the window end, so
+    the showinfo log (which is the only place source PTS survives — issue #7)
+    covers more frames than were written. extract_frames() ends with
+    `times if len(times) == count else []`, so the mismatch threw away *every*
+    timestamp: no frames.json, no `frame timestamps:` line in MANIFEST.txt, and
+    no error. A --to run silently lost the clock that #16 exists to preserve.
+    """
+    for start, end in ((None, 60), (90, 120), (0, 15)):
+        pre, post = _window_args(start, end)
+        assert "-t" in pre, f"-t must be an input option for --from {start} --to {end}"
+        assert post == [], f"nothing belongs after -i, got {post}"
+
+
+def test_window_args_puts_seek_before_duration():
+    # -ss then -t: the duration is measured from the seek point, not from 0.
+    pre, _ = _window_args(90, 120)
+    assert pre.index("-ss") < pre.index("-t")
 
 
 def test_window_args_rejects_inverted_window():
