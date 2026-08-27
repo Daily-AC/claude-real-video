@@ -1,3 +1,32 @@
+## 0.10.1 — 2026-08-27
+
+- **`--to` keeps the frame timestamps again** (#19, #21). The window's `-t` was
+  an output-side option, so ffmpeg decoded past the window end and the
+  showinfo log covered more frames than were written — the count mismatch
+  silently threw away every timestamp (no `frames.json`, no
+  `frame timestamps:` line). `-t` now sits on the input side with `-ss`.
+- **A window now reaches shipped captions too** (#20, #23). Sidecar `.srt`/`.vtt`
+  files and embedded subtitle streams are clipped to `--from`/`--to`, so a
+  windowed run gets a windowed transcript whichever path produced it.
+- **`--text-anchors` lands on the right frames under `--from`** (#20, #24).
+  Anchor frame indices are rebased onto the window start — an input-side seek
+  restarts ffmpeg's frame counter at zero, so source-clock cue times pointed
+  `start x fps` frames too late.
+- **A broken Pillow install fails loudly instead of silently skipping dedup**
+  (#22). Pillow is a declared dependency; when it cannot import, the run now
+  raises with a reinstall hint instead of producing `#19`'s exact signature
+  (no `frames.json`, no timestamps, exit 0) from a different cause.
+
+All four were reported — and three arrived as ready pull requests with
+regression tests — by @Jassu225. Thank you.
+
+## 0.10.0 — 2026-08-22
+
+- **`--from` / `--to` analysis window** (#16): analyse a slice of a long video
+  without re-encoding it first. The frame budget and the transcript follow the
+  window; reported timestamps stay on the source clock.
+- **`--frame-width`** (#17): control the extracted frame width (default 640).
+
 ## 0.9.3 — 2026-08-18
 
 - **A failed ffmpeg no longer reads as an empty video** (#15). `extract_frames()`

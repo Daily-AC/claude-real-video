@@ -506,8 +506,18 @@ def dedup_frames(frames_dir: str, threshold: float = 8, window: int = 4,
         times = None  # count drifted (mixed dir?) — better no timestamps than wrong ones
     try:
         from PIL import Image, ImageChops
-    except ImportError:
-        return len(frames), []
+    except ImportError as e:
+        # Pillow is a declared hard dependency (pyproject). If it fails to
+        # import the environment is broken — say so instead of silently
+        # skipping dedup and every downstream artifact (frames.json,
+        # report.html, MANIFEST timestamps). Issue #22: a silent zero here
+        # reproduces #19's exact signature from a different cause.
+        raise RuntimeError(
+            "Pillow failed to import, but it is a required dependency: "
+            f"{e}. Reinstall it (pip install --force-reinstall Pillow) — "
+            "without it there is no deduplication, no frames.json and no "
+            "frame timestamps."
+        ) from e
 
     FINE = 192          # settled-channel signature size (px)
     GRID = 16           # settled-channel scoring grid (GRIDxGRID cells)
