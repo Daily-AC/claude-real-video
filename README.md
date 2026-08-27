@@ -100,6 +100,16 @@ crv "https://youtu.be/..." --why "find the pricing strategy" --kb ~/notes
 `--why` makes the analysis focus on what you care about instead of a generic summary;
 `--kb` saves the result as a dated note in your own notes folder, so it doesn't die in `crv-out`.
 
+**New in 0.10.x** — analyse only the part that matters:
+
+```bash
+crv long-meeting.mp4 --from 28:00 --to 43:00
+```
+
+`--from` / `--to` cut a window out of a long video: ffmpeg seeks instead of decoding
+the whole file, the transcript and frame budget follow the window, and every reported
+timestamp is still a source timecode you can quote back to the original.
+
 ---
 
 ## Measured numbers
