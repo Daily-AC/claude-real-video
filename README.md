@@ -91,7 +91,7 @@ mkdir -p ~/.claude/skills && cp -r claude-real-video/skills/claude-real-video ~/
 
 </details>
 
-**New in 0.3.0** — tell it *why* you're watching, and keep what it finds:
+**Tell it *why* you're watching, and keep what it finds:**
 
 ```bash
 crv "https://youtu.be/..." --why "find the pricing strategy" --kb ~/notes
