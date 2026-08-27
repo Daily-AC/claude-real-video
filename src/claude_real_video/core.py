@@ -928,15 +928,22 @@ def _subtitle_cue_times(src: str, video: str, out_dir: str) -> list[float]:
     return sorted(times)
 
 
-def _text_anchor_frames(times: list[float], fps: float, min_gap: float = 1.0) -> list[int]:
+def _text_anchor_frames(times: list[float], fps: float, min_gap: float = 1.0,
+                        origin: float = 0.0) -> list[int]:
     """Cue start times → frame numbers to force, at most one per `min_gap`
     seconds so dense captions (karaoke-style, rapid dialogue) don't flood the
     extraction — dedup would drop the extras anyway, but they'd still cost an
-    extraction pass each."""
+    extraction pass each.
+
+    `origin` is the window start: these numbers become `eq(n,N)` in the select
+    filter, and an input-side -ss restarts `n` at 0, so a source-clock cue time
+    has to be rebased or every anchor lands `origin * fps` frames too late.
+    (Issue #16's trap one layer down: the timestamp clock does not shift, but
+    the frame-index clock does.)"""
     picked, last = [], -min_gap
     for t in times:
         if t - last >= min_gap:
-            picked.append(round(t * fps))
+            picked.append(round((t - origin) * fps))
             last = t
     return picked
 
@@ -1274,7 +1281,10 @@ def process(src: str, out_dir: str, *, scene: float = 0.30, fps_floor: float = 1
         # flat 150 starved long videos (one frame per 2.3s on a 5:38 video);
         # scale the default with duration, explicit --max-frames still wins
         max_frames = int(min(600, max(150, window_dur * 1.5)))
-    anchors = (_text_anchor_frames(_subtitle_cue_times(src, video, out_dir), _fps(video))
+    anchors = (_text_anchor_frames(
+                   [t for t in _subtitle_cue_times(src, video, out_dir)
+                    if (start or 0.0) <= t <= (end if end is not None else float("inf"))],
+                   _fps(video), origin=start or 0.0)
                if text_anchors else None)
     extracted, frame_times = (
         extract_frames_adaptive(video, frames_dir, fps_floor, anchors=anchors,
