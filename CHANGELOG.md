@@ -1,3 +1,18 @@
+## 0.10.2 — 2026-08-28
+
+- **URL downloads now use the platform's own captions** (#25, by @Daily-AC).
+  The "existing subtitles" fast path only ever held for local files — a URL
+  run never asked yt-dlp for captions and always fell through to Whisper,
+  even when the platform had a transcript sitting right there. crv now reads
+  the video's metadata once and asks for a **single exact language code**
+  (preferring `--lang`, then the video's own language, then English; manual
+  tracks before auto-generated) — not `--sub-langs all`, which on YouTube
+  means 157 auto-translated tracks, and not a regex, which still matches
+  them. Fail-open: any metadata failure just means Whisper runs as before.
+- **A partial download no longer hands ffmpeg a subtitle file** (#25). The
+  `source.*` fallback glob now screens out `.vtt`/`.srt`-style sidecars, which
+  could previously be picked up as "the video" and die with no video stream.
+
 ## 0.10.1 — 2026-08-27
 
 - **`--to` keeps the frame timestamps again** (#19, #21). The window's `-t` was
